@@ -95,11 +95,8 @@ class InfoLeds
 			if(current_time - _last_tick_time < 10) return;
 			_last_tick_time = current_time;
 			
-			//for(uint8_t i = 0; i < _leds_max; ++i)
 			for(channel_t &channel : _channels)
 			{
-				//channel_t &channel = _channels[i];
-				
 				if(channel.port == NULL) continue;
 				if(channel.mode == MODE_OFF) continue;
 				
