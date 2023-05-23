@@ -10,7 +10,7 @@ class InfoLeds
 	
 	typedef struct
 	{
-		GPIO_TypeDef *port;
+		GPIO_TypeDef *port = nullptr;
 		uint16_t pin_digital;
 		
 		mode_t mode;
@@ -24,24 +24,17 @@ class InfoLeds
 	
 	public:
 		
-		enum led_t : uint8_t
-		{
-			LED_RED = 0x01,
-			LED_YELLOW = 0x02,
-			LED_GREEN = 0x03,
-			LED_BLUE = 0x04
-		};
-		
-		void AddLed(channel_t channel, led_t led)
+		void AddLed(channel_t channel, uint8_t led)
 		{
 			if(led > _leds_max || led == 0) return;
 			
+			_HW_CFG(channel);
 			_channels[led-1] = channel;
 			
 			return;
 		}
 		
-		void SetOn(led_t led)
+		void SetOn(uint8_t led)
 		{
 			if(led > _leds_max || led == 0) return;
 			
@@ -52,7 +45,7 @@ class InfoLeds
 			return;
 		}
 		
-		void SetOn(led_t led, uint16_t blink_on, uint16_t blink_off)
+		void SetOn(uint8_t led, uint16_t blink_on, uint16_t blink_off)
 		{
 			if(led > _leds_max || led == 0) return;
 			
@@ -65,7 +58,7 @@ class InfoLeds
 			return;
 		}
 		
-		void SetOff(led_t led)
+		void SetOff(uint8_t led)
 		{
 			if(led > _leds_max || led == 0) return;
 			
@@ -97,7 +90,7 @@ class InfoLeds
 			
 			for(channel_t &channel : _channels)
 			{
-				if(channel.port == NULL) continue;
+				if(channel.port == nullptr) continue;
 				if(channel.mode == MODE_OFF) continue;
 				
 				if(channel.mode == MODE_BLINK && current_time - channel.blink_time > channel.blink_delay)
@@ -137,9 +130,19 @@ class InfoLeds
 			
 			return;
 		}
+
+		void _HW_CFG(channel_t &channel)
+		{
+			GPIO_InitStruct.Pin = channel.pin_digital;
+			HAL_GPIO_Init(channel.port, &GPIO_InitStruct);
+			channel.state = GPIO_PIN_RESET;
+			
+			return;
+		}
 		
 		channel_t _channels[_leds_max];
-		uint8_t _ports_idx = 0;
-
+		
 		uint32_t _last_tick_time = 0;
+		
+		GPIO_InitTypeDef GPIO_InitStruct = {GPIO_PIN_RESET, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW};
 };
