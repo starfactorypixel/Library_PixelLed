@@ -30,6 +30,7 @@ class InfoLeds
 			
 			_HW_CFG(channel);
 			_channels[led-1] = channel;
+			SetOff(led);
 			
 			return;
 		}
