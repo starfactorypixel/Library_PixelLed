@@ -3,33 +3,32 @@
 #include <stm32f1xx_hal.h>
 #include <inttypes.h>
 
-template <uint8_t _leds_max> 
+template <uint8_t _leds_max, uint16_t _tick_time = 10> 
 class InfoLeds
 {
-	enum mode_t : uint8_t { MODE_OFF, MODE_ON, MODE_BLINK };
-	
-	typedef struct
-	{
-		GPIO_TypeDef *port = nullptr;
-		uint16_t pin_digital;
-		
-		mode_t mode;
-		GPIO_PinState state;
-		uint16_t blink_on;
-		uint16_t blink_off;
-		uint32_t blink_time;
-		uint32_t blink_delay;
-	} channel_t;
-	
+	enum mode_t : uint8_t { MODE_OFF, MODE_ON, MODE_BLINK, MODE_OFF_DELAY };
 	
 	public:
 		
-		void AddLed(channel_t channel, uint8_t led)
+		typedef struct
+		{
+			GPIO_TypeDef *Port;
+			uint16_t Pin;
+		} pin_t;
+		
+		InfoLeds()
+		{
+			memset(_channels, 0x00, sizeof(_channels));
+			
+			return;
+		}
+		
+		void AddLed(pin_t pin, uint8_t led)
 		{
 			if(led > _leds_max || led == 0) return;
 			
-			_HW_CFG(channel);
-			_channels[led-1] = channel;
+			_HW_PinInit(pin, GPIO_MODE_OUTPUT_PP);
+			_channels[led-1].pin = pin;
 			SetOff(led);
 			
 			return;
@@ -45,6 +44,14 @@ class InfoLeds
 			
 			return;
 		}
+
+		void SetOn(uint8_t led, uint32_t delay)
+		{
+			SetOn(led);
+			SetOff(led, delay);
+			
+			return;
+		}
 		
 		void SetOn(uint8_t led, uint16_t blink_on, uint16_t blink_off)
 		{
@@ -52,10 +59,14 @@ class InfoLeds
 			
 			channel_t &channel = _channels[led-1];
 			SetOn(led);
+			channel.mode = MODE_BLINK;
 			channel.blink_on = blink_on;
 			channel.blink_off = blink_off;
-			channel.mode = MODE_BLINK;
-			
+
+			// Исправляем 'промигивание' при включении. Костыли, но как иначе? :'(
+			channel.blink_delay = blink_on;
+			channel.init_time = HAL_GetTick();
+
 			return;
 		}
 		
@@ -66,6 +77,18 @@ class InfoLeds
 			channel_t &channel = _channels[led-1];
 			_HW_LOW(channel);
 			channel.mode = MODE_OFF;
+			
+			return;
+		}
+
+		void SetOff(uint8_t led, uint32_t delay)
+		{
+			if(led > _leds_max || led == 0) return;
+
+			channel_t &channel = _channels[led-1];
+			channel.mode = MODE_OFF_DELAY;
+			channel.blink_delay = delay;
+			channel.init_time = HAL_GetTick();
 			
 			return;
 		}
@@ -86,17 +109,17 @@ class InfoLeds
 		
 		void Processing(uint32_t current_time)
 		{
-			if(current_time - _last_tick_time < 10) return;
+			if(current_time - _last_tick_time < _tick_time) return;
 			_last_tick_time = current_time;
 			
 			for(channel_t &channel : _channels)
 			{
-				if(channel.port == nullptr) continue;
+				if(channel.pin.Port == nullptr) continue;
 				if(channel.mode == MODE_OFF) continue;
 				
-				if(channel.mode == MODE_BLINK && current_time - channel.blink_time > channel.blink_delay)
+				if(channel.mode == MODE_BLINK && current_time - channel.init_time > channel.blink_delay)
 				{
-					channel.blink_time = current_time;
+					channel.init_time = current_time;
 					
 					if(channel.state == GPIO_PIN_RESET)
 					{
@@ -109,6 +132,11 @@ class InfoLeds
 						_HW_LOW(channel);
 					}
 				}
+				else if(channel.mode == MODE_OFF_DELAY && current_time - channel.init_time > channel.blink_delay)
+				{
+					channel.mode = MODE_OFF;
+					_HW_LOW(channel);
+				}
 			}
 			
 			return;
@@ -116,9 +144,21 @@ class InfoLeds
 		
 	private:
 		
+		typedef struct
+		{
+			pin_t pin;
+			
+			mode_t mode;
+			GPIO_PinState state;
+			uint16_t blink_on;
+			uint16_t blink_off;
+			uint32_t blink_delay;
+			uint32_t init_time;
+		} channel_t;
+		
 		void _HW_HIGH(channel_t &channel)
 		{
-			HAL_GPIO_WritePin(channel.port, channel.pin_digital, GPIO_PIN_SET);
+			HAL_GPIO_WritePin(channel.pin.Port, channel.pin.Pin, GPIO_PIN_SET);
 			channel.state = GPIO_PIN_SET;
 			
 			return;
@@ -126,17 +166,19 @@ class InfoLeds
 		
 		void _HW_LOW(channel_t &channel)
 		{
-			HAL_GPIO_WritePin(channel.port, channel.pin_digital, GPIO_PIN_RESET);
+			HAL_GPIO_WritePin(channel.pin.Port, channel.pin.Pin, GPIO_PIN_RESET);
 			channel.state = GPIO_PIN_RESET;
 			
 			return;
 		}
-
-		void _HW_CFG(channel_t &channel)
+		
+		void _HW_PinInit(pin_t pin, uint32_t mode)
 		{
-			GPIO_InitStruct.Pin = channel.pin_digital;
-			HAL_GPIO_Init(channel.port, &GPIO_InitStruct);
-			channel.state = GPIO_PIN_RESET;
+			HAL_GPIO_WritePin(pin.Port, pin.Pin, GPIO_PIN_RESET);
+			
+			_pin_config.Pin = pin.Pin;
+			_pin_config.Mode = mode;
+			HAL_GPIO_Init(pin.Port, &_pin_config);
 			
 			return;
 		}
@@ -144,6 +186,6 @@ class InfoLeds
 		channel_t _channels[_leds_max];
 		
 		uint32_t _last_tick_time = 0;
-		
-		GPIO_InitTypeDef GPIO_InitStruct = {GPIO_PIN_RESET, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW};
+
+		GPIO_InitTypeDef _pin_config = { GPIO_PIN_0, GPIO_MODE_OUTPUT_PP, GPIO_NOPULL, GPIO_SPEED_FREQ_LOW };
 };
