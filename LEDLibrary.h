@@ -99,7 +99,7 @@ class InfoLeds
 			{
 				channel_t &channel = _channels[i];
 
-				if(channel.port == NULL) continue;
+				if(channel.pin.Port == NULL) continue;
 
 				SetOff(i+1);
 			}
