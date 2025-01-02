@@ -1,6 +1,4 @@
 #pragma once
-
-#include <stm32f1xx_hal.h>
 #include <inttypes.h>
 
 template <uint8_t _leds_max, uint16_t _tick_time = 10> 
